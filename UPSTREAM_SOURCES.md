@@ -7,3 +7,5 @@
 上游原始源码的精确下载地址与摘要见 `release-sources.json`。PyMuPDF 的 `setup.py`、`pyproject.toml` 和随包文档包含构建配置，默认 MuPDF 版本同为 1.28.0。希望自行重建 PDF 引擎时可解压两份源码，按照 [PyMuPDF 对应版本的构建说明](https://github.com/pymupdf/PyMuPDF/blob/1.28.0/setup.py) 设置 `PYMUPDF_SETUP_MUPDF_BUILD` 指向 MuPDF 源码目录，然后从 PyMuPDF 源码构建 wheel。上游构建需其声明的 C/C++ 工具链。
 
 PDF.js 5.6.205 的可读发行模块与许可随应用源码提供；上游项目为 [mozilla/pdf.js](https://github.com/mozilla/pdf.js)，准确包版本见 `app/vendor/pdfjs/package.json`。CPython 与 Tcl/Tk 的原始许可随 Windows 包的 `licenses/` 目录提供。本应用许可见 LICENSE，各组件许可见 THIRD_PARTY_NOTICES.md。
+
+Tcl 8.6.15 的许可原文取自 [官方 core-8-6-15 源码的 license.terms](https://raw.githubusercontent.com/tcltk/tcl/core-8-6-15/license.terms)，保存在 `licenses/Tcl-8.6.15-license.terms`，供使用该 Tcl 版本的构建打包。
