@@ -1,0 +1,43 @@
+name: Check and build
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -v
+  windows-package:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    needs: tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-build.txt
+      - run: python scripts/build_release.py --output release
+      - run: python scripts/smoke_bundle.py --exe release/portable/PaperLearningAssistant/PaperLearningAssistant.exe --output smoke-output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: |
+            release/*-source.zip
+            release/*-windows-x64.zip
+            release/setup/*.exe
+            release/SHA256SUMS.txt
+            release/*.tar.gz
