@@ -192,6 +192,68 @@ class BackupTests(unittest.TestCase):
         backup.restore_backup(self.archive, self.restored)
         self.assertTrue((self.restored / "articles.json").is_file())
 
+    def test_restore_accepts_existing_parent_alias_and_uses_canonical_destination(self):
+        self.make_backup()
+        parent = self.folder / "canonical-parent"
+        parent.mkdir()
+        alias = self.folder / "parent-alias"
+        try:
+            alias.symlink_to(parent.resolve(), target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"Directory symlinks unavailable: {type(exc).__name__}")
+        (parent / "empty").mkdir()
+        for relative in (Path("nested/new"), Path("empty")):
+            with self.subTest(destination=str(relative)):
+                destination = alias / relative
+                result = backup.restore_backup(self.archive, destination)
+                canonical = (parent / relative).resolve()
+                self.assertEqual(result["destination"], str(canonical))
+                self.assertEqual((destination / "articles.json").read_bytes(), (canonical / "articles.json").read_bytes())
+                self.assertTrue((canonical / backup.MODEL_REVIEW_PATH).is_file())
+        self.assertTrue(alias.is_symlink())
+
+    def test_restore_rejects_nonempty_destination_under_parent_alias(self):
+        self.make_backup()
+        parent = self.folder / "canonical-parent"
+        destination = parent / "restored"
+        destination.mkdir(parents=True)
+        existing = destination / "personal-note.txt"
+        existing.write_text("keep", encoding="utf-8")
+        alias = self.folder / "parent-alias"
+        try:
+            alias.symlink_to(parent.resolve(), target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"Directory symlinks unavailable: {type(exc).__name__}")
+        with self.assertRaisesRegex(backup.BackupError, "完全空目录"):
+            backup.restore_backup(self.archive, alias / "restored")
+        self.assertEqual(existing.read_text(encoding="utf-8"), "keep")
+        self.assertEqual(list(destination.iterdir()), [existing])
+
+    def test_restore_target_itself_cannot_be_live_or_dangling_link(self):
+        self.make_backup()
+        for kind in ("empty", "nonempty", "dangling"):
+            with self.subTest(kind=kind):
+                destination = self.folder / ("linked-target-" + kind)
+                actual = self.folder / ("actual-target-" + kind)
+                if kind != "dangling":
+                    actual.mkdir()
+                if kind == "nonempty":
+                    (actual / "personal-note.txt").write_text("keep", encoding="utf-8")
+                try:
+                    destination.symlink_to(actual.resolve(), target_is_directory=True)
+                except (OSError, NotImplementedError) as exc:
+                    self.skipTest(f"Directory symlinks unavailable: {type(exc).__name__}")
+                with self.assertRaisesRegex(backup.BackupError, "链接"):
+                    backup.restore_backup(self.archive, destination)
+                self.assertTrue(destination.is_symlink())
+                if kind == "dangling":
+                    self.assertFalse(actual.exists())
+                elif kind == "empty":
+                    self.assertEqual(list(actual.iterdir()), [])
+                else:
+                    self.assertEqual((actual / "personal-note.txt").read_text(encoding="utf-8"), "keep")
+                    self.assertEqual(len(list(actual.iterdir())), 1)
+
     def test_committed_wal_is_snapshotted_without_wal_files(self):
         path = self.root / "learning/additional.sqlite"
         with closing(sqlite3.connect(path)) as connection:
@@ -289,16 +351,17 @@ class BackupTests(unittest.TestCase):
     def test_partial_restore_is_retained_and_named(self):
         self.make_backup()
         original_open = Path.open
+        canonical_target = self.restored.resolve()
 
         def fail_second(path, *args, **kwargs):
-            if path == self.restored / "relations.json" and args and args[0] == "xb":
+            if path == canonical_target / "relations.json" and args and args[0] == "xb":
                 raise OSError("synthetic disk failure")
             return original_open(path, *args, **kwargs)
 
         with patch.object(Path, "open", fail_second), self.assertRaisesRegex(backup.BackupError, "已写入内容保留") as caught:
             backup.restore_backup(self.archive, self.restored)
         self.assertTrue((self.restored / "articles.json").exists())
-        self.assertIn(str(self.restored), str(caught.exception))
+        self.assertIn(str(canonical_target), str(caught.exception))
         with self.assertRaisesRegex(backup.BackupError, "完全空目录"):
             backup.restore_backup(self.archive, self.restored)
 

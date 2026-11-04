@@ -3,6 +3,16 @@
     [ValidateRange(1,65535)][int]$Port = 18766
 )
 $ErrorActionPreference = 'Stop'
+$packagedLauncher = Join-Path $PSScriptRoot 'PaperLearningAssistant.exe'
+if (Test-Path -LiteralPath $packagedLauncher) {
+    $packagedArguments = @('--port', [string]$Port)
+    if ($DataDir) {
+        $resolvedDataDir = [System.IO.Path]::GetFullPath($DataDir)
+        $packagedArguments += @('--data-dir', ('"' + $resolvedDataDir.TrimEnd('\') + '"'))
+    }
+    Start-Process -FilePath $packagedLauncher -ArgumentList $packagedArguments -WorkingDirectory $PSScriptRoot -WindowStyle Hidden
+    exit 0
+}
 $launcherPath = Join-Path $PSScriptRoot 'launcher.py'
 $interpreter = $null
 foreach ($candidate in @('.venv\Scripts\pythonw.exe', '.venv\Scripts\python.exe')) {

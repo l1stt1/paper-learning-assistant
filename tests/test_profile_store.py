@@ -248,6 +248,42 @@ class ProfileStoreTests(unittest.TestCase):
                 serve(data_dir=profile, port=occupied.getsockname()[1], app_root=self.app)
         self.assertFalse(profile.exists())
 
+    def test_service_and_cli_help_preserve_chinese_with_cp1252_redirected_output(self):
+        environment = {**os.environ, "PYTHONIOENCODING": "cp1252", "PYTHONUTF8": "0"}
+        script = """import sys
+from unittest.mock import patch
+from server import LocalServer, serve
+with patch.object(LocalServer, 'serve_forever', return_value=None):
+    serve(data_dir=sys.argv[1], port=0)
+"""
+        commands = [
+            [sys.executable, "-c", script, str(self.work / "cp1252-profile")],
+            [sys.executable, str(ROOT / "server.py"), "--help"],
+        ]
+        for command in commands:
+            with self.subTest(entry=command[1]):
+                result = subprocess.run(command, cwd=ROOT, env=environment, capture_output=True, timeout=20)
+                self.assertEqual(result.returncode, 0, result.stderr.decode("ascii", errors="backslashreplace"))
+                output = result.stdout.decode("utf-8")
+                self.assertIn("学习助手", output)
+        self.assertEqual(read_service_info(self.work / "cp1252-profile")["status"], "stopped")
+
+    def test_service_starts_without_standard_streams_in_windowed_runtime(self):
+        profile = self.work / "windowed-profile"
+        script = """import sys
+from unittest.mock import patch
+from server import LocalServer, serve
+sys.stdout = sys.stderr = None
+with patch.object(LocalServer, 'serve_forever', return_value=None):
+    serve(data_dir=sys.argv[1], port=0)
+"""
+        result = subprocess.run([sys.executable, "-c", script, str(profile)], cwd=ROOT,
+                                capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(read_service_info(profile)["status"], "stopped")
+        with ProfileLock(profile):
+            pass
+
     def test_http_health_static_assets_busy_and_token_guarded_shutdown(self):
         app = self.app / "app"
         app.mkdir()

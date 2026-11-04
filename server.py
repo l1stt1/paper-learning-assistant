@@ -11,6 +11,7 @@ import shutil
 import socket
 import sqlite3
 import subprocess
+import sys
 import threading
 import uuid
 from contextlib import contextmanager
@@ -804,7 +805,16 @@ class LocalServer(ThreadingHTTPServer):
         super().server_bind()
 
 
+def _configure_text_output():
+    # Redirected streams can default to cp1252 on English Windows. Preserve
+    # Chinese messages in logs as UTF-8; windowed builds may have no streams.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def serve(data_dir=None, port=18766, ready_callback=None, app_root=ROOT):
+    _configure_text_output()
     # Bind before opening a library; a port conflict must not mutate saved jobs.
     server = LocalServer(("127.0.0.1", port), Handler)
     library = None
@@ -841,6 +851,7 @@ def serve(data_dir=None, port=18766, ready_callback=None, app_root=ROOT):
 
 
 def main(argv=None):
+    _configure_text_output()
     parser = argparse.ArgumentParser(description="启动本地文章阅读学习助手")
     parser.add_argument("--port", type=int, default=18766)
     parser.add_argument("--data-dir", type=Path, help="完整文库目录（文章、PDF、导读、记录和设置）")

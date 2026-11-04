@@ -398,11 +398,15 @@ def restore_backup(archive, destination):
     target = Path(destination).expanduser().absolute()
     started = False
     try:
-        # Resolve all existing ancestors before writing, rejecting symlink/junction
-        # redirection rather than silently restoring into another directory.
-        for candidate in (target, *target.parents):
-            if (candidate.exists() or candidate.is_symlink()) and _is_link(candidate):
-                raise BackupError("恢复目标及其父目录不能是链接。")
+        # The selected destination must not itself redirect to another directory.
+        # Canonicalize its parents once: system aliases such as macOS /var are
+        # valid, and later writes should use their resolved location directly.
+        try:
+            if _is_link(target):
+                raise BackupError("恢复目标不能是链接。")
+        except FileNotFoundError:
+            pass
+        target = target.parent.resolve() / target.name
         if target.exists() and (not target.is_dir() or any(target.iterdir())):
             raise BackupError("恢复目标必须是新目录或完全空目录；不会覆盖原资料。")
         with zipfile.ZipFile(archive, "r") as source:
