@@ -3,13 +3,16 @@
     [ValidateRange(1,65535)][int]$Port = 18766
 )
 $ErrorActionPreference = 'Stop'
+$dataArguments = @()
+if ($DataDir) {
+    $resolvedDataDir = [System.IO.Path]::GetFullPath($DataDir)
+    # Keep drive roots absolute without escaping the argument's closing quote.
+    if ($resolvedDataDir.EndsWith('\')) { $resolvedDataDir += '.' }
+    $dataArguments = @('--data-dir', ('"' + $resolvedDataDir + '"'))
+}
 $packagedLauncher = Join-Path $PSScriptRoot 'PaperLearningAssistant.exe'
 if (Test-Path -LiteralPath $packagedLauncher) {
-    $packagedArguments = @('--port', [string]$Port)
-    if ($DataDir) {
-        $resolvedDataDir = [System.IO.Path]::GetFullPath($DataDir)
-        $packagedArguments += @('--data-dir', ('"' + $resolvedDataDir.TrimEnd('\') + '"'))
-    }
+    $packagedArguments = @('--port', [string]$Port) + $dataArguments
     Start-Process -FilePath $packagedLauncher -ArgumentList $packagedArguments -WorkingDirectory $PSScriptRoot -WindowStyle Hidden
     exit 0
 }
@@ -30,9 +33,5 @@ if (-not $interpreter) {
     [System.Windows.MessageBox]::Show('源码运行需要 Python 3.11 或更新版本及 requirements.txt 中的依赖。也可使用 Windows 打包版直接启动。', '文献学习助手') | Out-Null
     exit 1
 }
-$launchArguments = @(('"' + $launcherPath + '"'), '--port', [string]$Port)
-if ($DataDir) {
-    $resolvedDataDir = [System.IO.Path]::GetFullPath($DataDir)
-    $launchArguments += @('--data-dir', ('"' + $resolvedDataDir.TrimEnd('\') + '"'))
-}
+$launchArguments = @(('"' + $launcherPath + '"'), '--port', [string]$Port) + $dataArguments
 Start-Process -FilePath $interpreter -ArgumentList $launchArguments -WorkingDirectory $PSScriptRoot -WindowStyle Hidden

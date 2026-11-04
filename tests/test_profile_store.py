@@ -268,6 +268,22 @@ with patch.object(LocalServer, 'serve_forever', return_value=None):
                 self.assertIn("学习助手", output)
         self.assertEqual(read_service_info(self.work / "cp1252-profile")["status"], "stopped")
 
+    def test_loopback_service_starts_and_stops_without_reverse_dns(self):
+        profile = self.work / "no-dns-profile"
+        observed = []
+
+        def started(server):
+            observed.append((server.server_name, server.server_port))
+            self.assertTrue(server.request_shutdown())
+
+        with patch("socket.getfqdn", side_effect=AssertionError("Loopback startup must not require reverse DNS")):
+            serve(data_dir=profile, port=0, ready_callback=started, app_root=self.app)
+        self.assertEqual(observed[0][0], "127.0.0.1")
+        self.assertGreater(observed[0][1], 0)
+        self.assertEqual(read_service_info(profile)["status"], "stopped")
+        with ProfileLock(profile):
+            pass
+
     def test_service_starts_without_standard_streams_in_windowed_runtime(self):
         profile = self.work / "windowed-profile"
         script = """import sys

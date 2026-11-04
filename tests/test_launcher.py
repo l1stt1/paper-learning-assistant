@@ -76,6 +76,51 @@ class LauncherTests(unittest.TestCase):
         args = json.loads(result.stdout)
         self.assertEqual(args, ['"' + str(launcher.APP_ROOT / "launcher.py") + '"', "--port", "18982", "--data-dir", '"' + profile + '"'])
 
+    @unittest.skipUnless(os.name == "nt", "Windows source and packaged entry points")
+    def test_powershell_source_and_packaged_entries_preserve_drive_roots_and_quoted_paths(self):
+        import ctypes
+        splitter = ctypes.windll.shell32.CommandLineToArgvW
+        splitter.argtypes = [ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_int)]
+        splitter.restype = ctypes.POINTER(ctypes.c_wchar_p)
+        free = ctypes.windll.kernel32.LocalFree
+        free.argtypes = [ctypes.c_void_p]
+        free.restype = ctypes.c_void_p
+        profiles = [self.root.anchor, str(self.root / "中文资料库 with spaces"),
+                    str(self.root / "中文尾部斜杠 with spaces") + "\\"]
+        for packaged in (False, True):
+            folder = self.root / ("packaged-entry" if packaged else "source-entry")
+            folder.mkdir()
+            script = folder / "start.ps1"
+            script.write_bytes((launcher.APP_ROOT / "start.ps1").read_bytes())
+            executable = folder / "PaperLearningAssistant.exe" if packaged else folder / ".venv/Scripts/pythonw.exe"
+            executable.parent.mkdir(parents=True, exist_ok=True)
+            executable.write_bytes(b"argument-capture fixture; never executed")
+            for profile in profiles:
+                with self.subTest(packaged=packaged, profile=profile):
+                    command = "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); "
+                    command += ("function Start-Process { param($FilePath,[string[]]$ArgumentList,$WorkingDirectory,$WindowStyle) "
+                                "[pscustomobject]@{executable=$FilePath;arguments=$ArgumentList;working_directory=$WorkingDirectory;window_style=$WindowStyle} | ConvertTo-Json -Compress }; ")
+                    command += "& '" + str(script).replace("'", "''") + "' -DataDir '" + profile.replace("'", "''") + "' -Port 18982"
+                    result = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+                                            capture_output=True, text=True, encoding="utf-8", check=True)
+                    captured = json.loads(result.stdout)
+                    self.assertEqual(captured["executable"], str(executable))
+                    self.assertEqual(captured["working_directory"], str(folder))
+                    self.assertEqual(captured["window_style"], "Hidden")
+                    # Start-Process joins ArgumentList with spaces. Exercise the
+                    # native Windows parser without executing either fixture.
+                    count = ctypes.c_int()
+                    argv = splitter("capture.exe " + " ".join(captured["arguments"]), ctypes.byref(count))
+                    self.assertTrue(argv)
+                    try:
+                        parsed = [argv[index] for index in range(count.value)][1:]
+                    finally:
+                        free(ctypes.cast(argv, ctypes.c_void_p))
+                    prefix = [] if packaged else [str(folder / "launcher.py")]
+                    self.assertEqual(parsed[:-1], prefix + ["--port", "18982", "--data-dir"])
+                    self.assertTrue(Path(parsed[-1]).is_absolute())
+                    self.assertEqual(Path(parsed[-1]).resolve(), Path(profile).resolve())
+
     def test_health_must_match_product_and_complete_profile(self):
         health = {"product": launcher.PRODUCT, "root": str(self.root), "version": launcher.VERSION}
         with patch.object(launcher, "request_json", return_value=health):
