@@ -140,6 +140,19 @@ class LauncherTests(unittest.TestCase):
             probe.assert_called_once_with("http://127.0.0.1:18890", self.root)
             spawn.assert_not_called()
 
+    def test_unrelated_json_service_is_not_a_running_library(self):
+        for value in ([], ["other service"], None, "ready", 42):
+            with self.subTest(value=value), patch.object(launcher, "request_json", return_value=value):
+                self.assertIsNone(launcher.health_for_profile("http://127.0.0.1:1234", self.root))
+
+    def test_non_object_json_error_is_reported_as_http_failure(self):
+        from urllib.error import HTTPError
+        for body in (b'[]', b'"not available"', b'null'):
+            error = HTTPError("http://127.0.0.1:1234", 503, "Unavailable", {}, io.BytesIO(body))
+            with patch.object(launcher.LOCAL_HTTP, "open", side_effect=error):
+                with self.assertRaisesRegex(launcher.LauncherError, "503"):
+                    launcher.request_json("http://127.0.0.1:1234")
+
     def test_busy_service_cannot_be_stopped_or_backed_up(self):
         controller = launcher.ServiceController(self.root)
         with patch.object(controller, "find_running", return_value={"busy": True, "version": launcher.VERSION}), patch.object(launcher, "request_json") as request:

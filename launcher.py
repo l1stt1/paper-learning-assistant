@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import queue
 from pathlib import Path
 import socket
 import subprocess
@@ -40,7 +41,8 @@ def request_json(url, *, token=None, timeout=1.0):
             return json.load(response)
     except HTTPError as exc:
         try:
-            detail = json.load(exc).get("error", str(exc))
+            body = json.load(exc)
+            detail = body.get("error", str(exc)) if isinstance(body, dict) else str(exc)
         except (ValueError, OSError):
             detail = str(exc)
         raise LauncherError(detail) from exc
@@ -49,7 +51,7 @@ def request_json(url, *, token=None, timeout=1.0):
 def health_for_profile(url, profile):
     try:
         info = request_json(url.rstrip("/") + "/health")
-        if info.get("product") == PRODUCT and info.get("root") and _same_path(info["root"], profile):
+        if isinstance(info, dict) and info.get("product") == PRODUCT and info.get("root") and _same_path(info["root"], profile):
             return info
     except (OSError, URLError, ValueError, TypeError, LauncherError):
         pass
@@ -207,90 +209,117 @@ class LauncherWindow:
     def __init__(self, root, controller, *, auto_start=True):
         import tkinter as tk
         from tkinter import ttk
+        from desktop_ui import DesktopTheme
         self.tk, self.ttk = tk, ttk
         self.root, self.controller = root, controller
         self.working = False
-        self.closing = False
+        self.closed = False
+        self.probing = False
+        self.generation = 0
+        self.results = queue.SimpleQueue()
         self.buttons = []
+        self.theme = DesktopTheme(root, APP_ROOT / "assets")
+        p = self.theme.px
+        background, ink, muted = "#f4f7f5", "#203d3d", "#687d7a"
         self.root.title("文献学习助手")
-        self.root.geometry("780x590")
-        self.root.minsize(700, 560)
-        self.root.configure(bg="#f3f6fa")
+        self.root.geometry(f"{p(760)}x{p(650)}")
+        self.root.minsize(p(680), p(640))
+        self.root.configure(bg=background)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
-        style = ttk.Style(root)
-        style.theme_use("clam")
-        style.configure("Primary.TButton", font=("Microsoft YaHei UI", 11, "bold"), foreground="white",
-                        background="#176c91", padding=(22, 12), borderwidth=0)
-        style.map("Primary.TButton", background=[("active", "#125a79"), ("disabled", "#a8bfcd")])
-        style.configure("Quiet.TButton", font=("Microsoft YaHei UI", 10), foreground="#314b60",
-                        background="#e9eff4", padding=(14, 10), borderwidth=0)
-        style.map("Quiet.TButton", background=[("active", "#dce6ee"), ("disabled", "#edf1f5")])
-        style.configure("Small.TButton", font=("Microsoft YaHei UI", 9), foreground="#176c91",
-                        background="#ffffff", padding=(10, 7), borderwidth=0)
-        style.map("Small.TButton", background=[("active", "#edf4f8")])
-        icon = APP_ROOT / "assets" / "app-icon.png"
+        icon = APP_ROOT / "assets/app-icon.png"
         if icon.is_file():
             self.icon = tk.PhotoImage(file=str(icon))
             self.root.iconphoto(True, self.icon)
-            if os.name == "nt" and (APP_ROOT / "assets" / "app-icon.ico").is_file():
-                self.root.iconbitmap(str(APP_ROOT / "assets" / "app-icon.ico"))
-        header = tk.Frame(root, bg="#132d43", height=132)
+            if os.name == "nt" and (APP_ROOT / "assets/app-icon.ico").is_file():
+                self.root.iconbitmap(str(APP_ROOT / "assets/app-icon.ico"))
+
+        header = tk.Frame(root, bg=background, padx=p(32), pady=p(26))
         header.pack(fill="x")
-        header.pack_propagate(False)
-        if hasattr(self, "icon"):
-            self.header_icon = self.icon.subsample(4, 4)
-            tk.Label(header, image=self.header_icon, bg="#132d43").place(x=30, y=30)
-        tk.Label(header, text="文献学习助手", font=("Microsoft YaHei UI", 24, "bold"),
-                 fg="#ffffff", bg="#132d43").place(x=110, y=26)
-        tk.Label(header, text="从原文出发，让阅读与思考彼此连接", font=("Microsoft YaHei UI", 11),
-                 fg="#b4cbdc", bg="#132d43").place(x=113, y=78)
-        tk.Label(header, text="v" + VERSION, font=("Segoe UI", 10), fg="#92d8cc",
-                 bg="#214459", padx=12, pady=5).place(relx=1.0, x=-28, y=35, anchor="ne")
-        body = tk.Frame(root, bg="#f3f6fa", padx=28, pady=22)
+        tk.Label(header, image=self.theme.logo, bg=background).pack(side="left", padx=(0, p(14)))
+        heading = tk.Frame(header, bg=background)
+        heading.pack(side="left")
+        tk.Label(heading, text="文献学习助手", font=("Microsoft YaHei UI", 20, "bold"),
+                 fg=ink, bg=background, anchor="w").pack(anchor="w")
+        tk.Label(heading, text="从原文出发，让阅读与思考彼此连接", font=("Microsoft YaHei UI", 10),
+                 fg=muted, bg=background).pack(anchor="w", pady=(p(5), 0))
+        tk.Label(header, text="本地工作区", font=("Microsoft YaHei UI", 9),
+                 fg="#52766c", bg="#e6f0e9", padx=p(12), pady=p(6)).pack(side="right", anchor="n", pady=p(5))
+
+        body = tk.Frame(root, bg=background, padx=p(32))
         body.pack(fill="both", expand=True)
-        status_card = tk.Frame(body, bg="white", padx=20, pady=16)
+        status_card = tk.Frame(body, bg="white", padx=p(24), pady=p(22),
+                               highlightbackground="#e1e9e4", highlightthickness=1)
         status_card.pack(fill="x")
-        self.status = tk.StringVar(value="准备启动")
-        self.detail = tk.StringVar(value="正在准备本机阅读环境…")
         status_row = tk.Frame(status_card, bg="white")
         status_row.pack(fill="x")
-        self.dot = tk.Label(status_row, text="●", font=("Segoe UI", 13), fg="#d99c2f", bg="white")
-        self.dot.pack(side="left", padx=(0, 8))
-        tk.Label(status_row, textvariable=self.status, font=("Microsoft YaHei UI", 13, "bold"),
-                 fg="#1b354a", bg="white").pack(side="left")
+        self.dot = tk.Label(status_row, text="●", font=("Segoe UI", 10), fg="#c38c28", bg="white")
+        self.dot.pack(side="left", padx=(0, p(8)))
+        tk.Label(status_row, text="阅读服务", font=("Microsoft YaHei UI", 9), fg=muted,
+                 bg="white").pack(side="left")
         self.endpoint = tk.StringVar(value="仅在本机访问")
-        tk.Label(status_row, textvariable=self.endpoint, font=("Segoe UI", 10), fg="#6b8192",
+        tk.Label(status_row, textvariable=self.endpoint, font=("Segoe UI", 9), fg=muted,
                  bg="white").pack(side="right")
-        tk.Label(status_card, textvariable=self.detail, font=("Microsoft YaHei UI", 10),
-                 fg="#6a7f90", bg="white", anchor="w").pack(fill="x", pady=(5, 0))
-        actions = tk.Frame(body, bg="#f3f6fa")
-        actions.pack(fill="x", pady=(17, 20))
-        self.button(actions, "打开阅读网页", self.open_reader, "Primary.TButton").pack(side="left")
+        self.status = tk.StringVar(value="准备启动")
+        self.detail = tk.StringVar(value="正在准备本机阅读环境…")
+        tk.Label(status_card, textvariable=self.status, font=("Microsoft YaHei UI", 22, "bold"),
+                 fg=ink, bg="white", anchor="w").pack(fill="x", pady=(p(12), p(5)))
+        self.detail_label = tk.Label(status_card, textvariable=self.detail, font=("Microsoft YaHei UI", 10),
+                 fg=muted, bg="white", anchor="w", justify="left")
+        self.detail_label.pack(fill="x")
+        actions = tk.Frame(status_card, bg="white")
+        actions.pack(fill="x", pady=(p(22), 0))
+        self.button(actions, "打开阅读网页  →", self.open_reader, "Primary.TButton").pack(side="left")
         self.stop_button = self.button(actions, "停止后台", self.stop_service, "Quiet.TButton")
-        self.stop_button.pack(side="left", padx=(12, 0))
-        self.button(actions, "打开日志", self.open_log, "Quiet.TButton").pack(side="right")
-        data_card = tk.Frame(body, bg="white", padx=20, pady=15)
-        data_card.pack(fill="x")
+        self.stop_button.pack(side="left", padx=(p(10), 0))
+        self.button(actions, "查看日志", self.open_log, "Small.TButton").pack(side="right")
+
+        data_card = tk.Frame(body, bg="white", padx=p(24), pady=p(18),
+                             highlightbackground="#e1e9e4", highlightthickness=1)
+        data_card.pack(fill="x", pady=(p(16), 0))
         data_header = tk.Frame(data_card, bg="white")
         data_header.pack(fill="x")
-        tk.Label(data_header, text="我的资料库", font=("Microsoft YaHei UI", 11, "bold"),
-                 fg="#1b354a", bg="white").pack(side="left")
+        tk.Label(data_header, text="我的资料库", font=("Microsoft YaHei UI", 12, "bold"),
+                 fg=ink, bg="white").pack(side="left")
         self.button(data_header, "打开目录", lambda: self.local_action(self.controller.profile), "Small.TButton").pack(side="right")
-        self.button(data_header, "更换目录", self.choose_profile, "Small.TButton").pack(side="right", padx=8)
+        self.button(data_header, "更换目录", self.choose_profile, "Small.TButton").pack(side="right", padx=p(5))
         self.profile_text = tk.StringVar(value=str(controller.profile))
-        tk.Label(data_card, textvariable=self.profile_text, font=("Segoe UI", 10), fg="#546f83",
-                 bg="white", anchor="w", justify="left", wraplength=630).pack(fill="x", pady=(4, 7))
-        tk.Label(data_card, text="论文、导读与学习记录保存在此目录。备份可带到另一台电脑。",
-                 font=("Microsoft YaHei UI", 9), fg="#8495a3", bg="white", anchor="w").pack(fill="x")
-        archive_row = tk.Frame(body, bg="#f3f6fa")
-        archive_row.pack(fill="x", pady=(15, 0))
-        self.button(archive_row, "备份资料库…", self.backup_profile, "Quiet.TButton").pack(side="left")
-        self.button(archive_row, "从备份恢复…", self.restore_profile, "Quiet.TButton").pack(side="left", padx=12)
-        tk.Label(body, text="关闭此窗口时，可选择让阅读服务继续在后台运行。",
-                 font=("Microsoft YaHei UI", 9), fg="#8393a1", bg="#f3f6fa", anchor="w").pack(fill="x", pady=(16, 0))
-        self.root.after(1500, self.refresh)
+        self.path_label = tk.Label(data_card, textvariable=self.profile_text, font=("Segoe UI", 10),
+                 fg="#4d6661", bg="white", anchor="w", justify="left")
+        self.path_label.pack(fill="x", pady=(p(10), p(6)))
+        self.library_hint = tk.Label(data_card, text="论文、导读与学习记录保存在这里。", font=("Microsoft YaHei UI", 9),
+                 fg=muted, bg="white", anchor="w", justify="left")
+        self.library_hint.pack(fill="x")
+        tk.Frame(data_card, bg="#edf1ed", height=1).pack(fill="x", pady=(p(17), p(12)))
+        archive_row = tk.Frame(data_card, bg="white")
+        archive_row.pack(fill="x")
+        self.button(archive_row, "备份资料库…", self.backup_profile, "Small.TButton").pack(side="left")
+        self.button(archive_row, "从备份恢复…", self.restore_profile, "Small.TButton").pack(side="left", padx=p(12))
+        tk.Label(archive_row, text="恢复时另存为新目录", font=("Microsoft YaHei UI", 9),
+                 fg=muted, bg="white").pack(side="right")
+        footer = tk.Frame(body, bg=background)
+        footer.pack(fill="x", pady=(p(20), p(16)))
+        tk.Label(footer, text="关闭窗口时，可以保留后台继续阅读。", font=("Microsoft YaHei UI", 9),
+                 fg=muted, bg=background).pack(side="left")
+        tk.Label(footer, text="v" + VERSION, font=("Segoe UI", 9), fg=muted,
+                 bg=background).pack(side="right")
+        status_card.bind("<Configure>", lambda event: self.detail_label.configure(wraplength=max(1, event.width-p(50))))
+        data_card.bind("<Configure>", lambda event: self.path_label.configure(wraplength=max(1, event.width-p(50))))
+        self.result_timer = self.root.after(60, self.drain_results)
+        self.poll_timer = self.root.after(1500, self.refresh)
+        self.start_timer = None
         if auto_start:
-            self.root.after(150, lambda: self.action("正在启动", self.controller.start))
+            self.start_timer = self.root.after(150, lambda: self.action("正在启动", self.controller.start))
+
+    def drain_results(self):
+        while True:
+            try:
+                callback, result, error = self.results.get_nowait()
+            except queue.Empty:
+                break
+            callback(result, error)
+            if self.closed:
+                return
+        self.result_timer = self.root.after(60, self.drain_results)
 
     def button(self, parent, label, command, style):
         button = self.ttk.Button(parent, text=label, command=command, style=style)
@@ -305,6 +334,7 @@ class LauncherWindow:
         if self.working:
             return
         self.working = True
+        self.generation += 1
         self.status.set(label)
         self.detail.set("请稍候，完成后会自动更新状态。")
         self.dot.configure(fg="#d99c2f")
@@ -316,13 +346,13 @@ class LauncherWindow:
                 result, error = function(), None
             except Exception as exc:
                 result, error = None, exc
-            self.root.after(0, finish, result, error)
+            self.results.put((finish, result, error))
 
         def finish(result, error):
             self.working = False
             for button in self.buttons:
                 button.configure(state="normal")
-            self.update_status()
+            self.request_status()
             if error:
                 self.show_error(error)
             elif complete:
@@ -330,22 +360,21 @@ class LauncherWindow:
 
         threading.Thread(target=work, daemon=True).start()
 
-    def update_status(self):
-        info = self.controller.find_running()
+    def update_status(self, info, url):
         self.profile_text.set(str(self.controller.profile))
         if info:
             if info.get("version") != VERSION:
                 self.status.set("其他版本正在运行")
                 self.detail.set("请先从原启动入口退出后台，再使用当前版本打开资料库。")
-                self.endpoint.set(self.controller.url or "仅在本机访问")
+                self.endpoint.set(url or "仅在本机访问")
                 self.dot.configure(fg="#d99c2f")
                 self.stop_button.configure(state="disabled")
                 return
             self.status.set("正在处理任务" if info.get("busy") else "已准备好阅读")
             self.detail.set("任务结束后可以安全停止或备份。" if info.get("busy") else "阅读服务已在本机运行，点击“打开阅读网页”开始阅读。")
-            self.endpoint.set(self.controller.url or "仅在本机访问")
+            self.endpoint.set(url or "仅在本机访问")
             self.dot.configure(fg="#1a9a83")
-            self.stop_button.configure(state="normal")
+            self.stop_button.configure(state="disabled" if info.get("busy") else "normal")
         else:
             self.status.set("后台已停止")
             self.detail.set("点击“打开阅读网页”即可重新启动，已有资料不会改变。")
@@ -353,10 +382,37 @@ class LauncherWindow:
             self.dot.configure(fg="#8b9aa6")
             self.stop_button.configure(state="disabled")
 
+    def request_status(self):
+        if self.working or self.probing:
+            return
+        self.probing = True
+        generation = self.generation
+        probe = ServiceController(self.controller.profile, self.controller.preferred_port, self.controller.app_root)
+        probe.url = self.controller.url
+
+        def receive(result, error):
+            self.probing = False
+            if generation != self.generation:
+                self.request_status()
+                return
+            if error:
+                self.status.set("暂时无法确认后台状态")
+                self.detail.set("可稍后重试，或查看日志了解详情。")
+                self.dot.configure(fg="#c38c28")
+            else:
+                self.update_status(result, probe.url)
+
+        def work():
+            try:
+                result, error = probe.find_running(), None
+            except Exception as exc:
+                result, error = None, exc
+            self.results.put((receive, result, error))
+        threading.Thread(target=work, daemon=True).start()
+
     def refresh(self):
-        if not self.working:
-            self.update_status()
-        self.root.after(3000, self.refresh)
+        self.request_status()
+        self.poll_timer = self.root.after(3000, self.refresh)
 
     def open_reader(self):
         self.action("正在打开阅读网页", self.controller.start,
@@ -425,19 +481,30 @@ class LauncherWindow:
                 self.switch_profile(destination)
         self.action("正在恢复资料库", lambda: restore_backup(archive, destination), done)
 
+    def destroy(self):
+        self.closed = True
+        for timer in (self.result_timer, self.poll_timer, self.start_timer):
+            if timer:
+                self.root.after_cancel(timer)
+        self.root.destroy()
+
     def close(self):
         from tkinter import messagebox
         if self.working:
             messagebox.showinfo("操作进行中", "请等待当前操作完成后再关闭启动器。", parent=self.root)
             return
-        if not self.controller.find_running():
-            self.root.destroy()
+        self.action("正在检查后台", self.controller.find_running, self.confirm_close)
+
+    def confirm_close(self, info):
+        from tkinter import messagebox
+        if not info:
+            self.destroy()
             return
         choice = messagebox.askyesnocancel("关闭启动器", "是否同时安全停止后台服务？\n\n是：停止后台并退出\n否：只关闭窗口，网页可继续使用\n取消：返回启动器", parent=self.root)
         if choice is True:
-            self.action("正在安全退出", self.controller.stop, lambda _: self.root.destroy())
+            self.action("正在安全退出", self.controller.stop, lambda _: self.destroy())
         elif choice is False:
-            self.root.destroy()
+            self.destroy()
 
 
 def main(argv=None):
@@ -461,6 +528,8 @@ def main(argv=None):
     import tkinter as tk
     profile_base = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else APP_ROOT
     profile = resolve_profile_root(profile_base, parsed.data_dir)
+    from desktop_ui import enable_high_dpi
+    enable_high_dpi()
     root = tk.Tk()
     LauncherWindow(root, ServiceController(profile, parsed.port))
     root.mainloop()

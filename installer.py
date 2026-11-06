@@ -79,9 +79,13 @@ foreach ($folder in @($desktop, $programs)) {
 
 class Installer:
     def __init__(self):
+        from desktop_ui import enable_high_dpi
+        enable_high_dpi()
         self.root = tk.Tk()
+        scale = self.root.winfo_fpixels("1i") / 96
+        p = lambda value: round(value * scale)
         self.root.title("安装文献学习助手")
-        self.root.geometry("650x470")
+        self.root.geometry(f"{p(650)}x{p(470)}")
         self.root.resizable(False, False)
         self.root.configure(bg="#f3f6f8")
         self.busy = False
@@ -91,34 +95,34 @@ class Installer:
             self.root.iconbitmap(str(icon))
         style = ttk.Style()
         style.theme_use("clam")
-        style.configure("TButton", font=("Microsoft YaHei UI", 10), padding=(14, 9))
+        style.configure("TButton", font=("Microsoft YaHei UI", 10), padding=(p(14), p(9)))
         style.configure("Accent.TButton", foreground="white", background="#256c68")
         style.map("Accent.TButton", background=[("disabled", "#ced9dc"), ("active", "#19554f")],
                   foreground=[("disabled", "#536c78"), ("active", "white")])
-        header = tk.Frame(self.root, bg="#153e4b", padx=30, pady=25)
+        header = tk.Frame(self.root, bg="#153e4b", padx=p(30), pady=p(25))
         header.pack(fill="x")
         tk.Label(header, text="文献学习助手", font=("Microsoft YaHei UI", 23, "bold"), bg="#153e4b", fg="white").pack(anchor="w")
-        tk.Label(header, text=f"本地阅读 · 有据可循  /  {VERSION} 预发布版", font=("Microsoft YaHei UI", 10), bg="#153e4b", fg="#bad9da").pack(anchor="w", pady=(7, 0))
-        body = tk.Frame(self.root, bg="#f3f6f8", padx=30, pady=22)
+        tk.Label(header, text=f"本地阅读 · 有据可循  /  {VERSION} 预发布版", font=("Microsoft YaHei UI", 10), bg="#153e4b", fg="#bad9da").pack(anchor="w", pady=(p(7), 0))
+        body = tk.Frame(self.root, bg="#f3f6f8", padx=p(30), pady=p(22))
         body.pack(fill="both", expand=True)
         tk.Label(body, text="安装程序文件，个人资料另存于你的用户目录。", bg="#f3f6f8", fg="#304855", font=("Microsoft YaHei UI", 11)).pack(anchor="w")
-        tk.Label(body, text="原版本和已有文库都会保留。无需管理员权限。", bg="#f3f6f8", fg="#627986", font=("Microsoft YaHei UI", 10)).pack(anchor="w", pady=(6, 16))
+        tk.Label(body, text="原版本和已有文库都会保留。无需管理员权限。", bg="#f3f6f8", fg="#627986", font=("Microsoft YaHei UI", 10)).pack(anchor="w", pady=(p(6), p(16)))
         default = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs/PaperLearningAssistant" / VERSION
         self.path = tk.StringVar(value=str(default))
         row = tk.Frame(body, bg="#f3f6f8")
         row.pack(fill="x")
         ttk.Entry(row, textvariable=self.path, width=55).pack(side="left", fill="x", expand=True)
         self.choose = ttk.Button(row, text="选择…", command=self.select)
-        self.choose.pack(side="left", padx=(8, 0))
+        self.choose.pack(side="left", padx=(p(8), 0))
         self.shortcuts = tk.BooleanVar(value=True)
-        ttk.Checkbutton(body, text="创建桌面和开始菜单快捷方式", variable=self.shortcuts).pack(anchor="w", pady=(12, 0))
+        ttk.Checkbutton(body, text="创建桌面和开始菜单快捷方式", variable=self.shortcuts).pack(anchor="w", pady=(p(12), 0))
         self.status = tk.StringVar(value="准备就绪")
-        tk.Label(body, textvariable=self.status, bg="#f3f6f8", fg="#536c78", font=("Microsoft YaHei UI", 10), wraplength=575, justify="left").pack(anchor="w", pady=16)
+        tk.Label(body, textvariable=self.status, bg="#f3f6f8", fg="#536c78", font=("Microsoft YaHei UI", 10), wraplength=p(575), justify="left").pack(anchor="w", pady=p(16))
         actions = tk.Frame(body, bg="#f3f6f8")
         actions.pack(side="bottom", fill="x")
         ttk.Button(actions, text="关闭", command=self.close).pack(side="right")
         self.install_button = ttk.Button(actions, text="开始安装", style="Accent.TButton", command=self.install)
-        self.install_button.pack(side="right", padx=10)
+        self.install_button.pack(side="right", padx=p(10))
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
     def select(self):

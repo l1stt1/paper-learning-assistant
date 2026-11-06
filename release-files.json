@@ -69,9 +69,15 @@
     "assets/windows-version.txt",
     "licenses/OpenSSL-3.x-LICENSE.txt",
     "licenses/OpenSSL-3.6.2-LICENSE.txt",
-    "scripts/smoke_bundle.py"
+    "scripts/smoke_bundle.py",
+    "desktop_ui.py",
+    "scripts/build_desktop_assets.py",
+    "assets/windows-dpi.manifest",
+    "tests/test_http_disconnect.py",
+    "tests/test_launcher_window.py"
   ],
   "directories": [
-    "app/vendor/pdfjs"
+    "app/vendor/pdfjs",
+    "assets/desktop"
   ]
 }

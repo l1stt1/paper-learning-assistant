@@ -579,10 +579,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data: blob:; worker-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors " + ("'self'" if frameable else "'none'") + "; base-uri 'none'")
         if filename:
             self.send_header("Content-Disposition", 'attachment; filename="' + filename + '"')
-        self.end_headers()
         try:
+            self.end_headers()
             self.wfile.write(data)
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            # A browser may close or cancel a request while either headers or
+            # the response body are being sent. Other I/O errors remain visible.
             pass
 
     def allowed_host(self):
