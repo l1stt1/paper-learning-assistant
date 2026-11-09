@@ -53,6 +53,7 @@
     "tests/test_pdf_annotations.py",
     "tests/test_pdf_assets.py",
     "tests/test_pdf_text.py",
+    "tests/test_pdfjs_filename.mjs",
     "tests/test_profile_store.py",
     "tests/test_study_features.py",
     "tests/test_study_generation.py",

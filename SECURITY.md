@@ -7,3 +7,8 @@
 如发现漏洞，请使用仓库可用的私人漏洞报告功能；若尚不可用，先提交不含攻击细节及私人数据的问题标题，请维护者提供私下联系渠道。
 
 当前维护首个预发布系列。更新前请备份完整资料；恢复功能仅接受新目录，不会覆盖已有资料。
+
+## PDF.js 告警核查
+
+- `js/polynomial-redos`：5.6.205 的 `getPdfFilenameFromUrl` 对不含 `.pdf` 的长 URL 片段存在平方级耗时。当前阅读器使用 `getDocument`、页面渲染和文字层，不调用该辅助函数；原文与 Zotero 附件 URL 由应用生成。0.1.2 仍回移了 [Mozilla 官方修复](https://github.com/mozilla/pdf.js/pull/21685)，并验证常规文件名、编码、多个扩展名和超长片段。
+- `js/double-escaping`：`FileSpec.filename` 的替换用于路径分隔符规范化，顺序是 [上游明确保留的行为](https://github.com/mozilla/pdf.js/blob/v5.6.205/src/core/file_spec.js#L58-L66)。解析附件批注时可能执行该函数，但它不负责 HTML 或 URL 安全过滤。阅读助手没有内嵌附件下载/执行界面；本告警按误报处理，未改变替换顺序或关闭扫描规则。
