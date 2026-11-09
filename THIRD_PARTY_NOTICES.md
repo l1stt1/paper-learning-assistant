@@ -5,7 +5,7 @@
 | 组件 | 使用方式 | 许可与来源 |
 |---|---|---|
 | PyMuPDF 1.28.0 / MuPDF | 本机 PDF 文字、页图及导入 | 本发行版采用 AGPL-3.0 路线；[官方许可](https://pymupdf.readthedocs.io/en/latest/about.html#license-and-copyright)，[源码](https://github.com/pymupdf/PyMuPDF/tree/1.28.0) |
-| PDF.js / pdfjs-dist 5.6.205 | 浏览器 PDF 阅读与选字 | Apache-2.0；[PDF.js 源码](https://github.com/mozilla/pdf.js)。已保留 `app/vendor/pdfjs/LICENSE` 及字体、CMaps、ICC、WASM 的附属许可文件 |
+| PDF.js / pdfjs-dist 5.6.205（含官方修复回移） | 浏览器 PDF 阅读与选字 | Apache-2.0；[PDF.js 源码](https://github.com/mozilla/pdf.js)、[本地补丁记录](app/vendor/pdfjs/PATCHES.md)。已保留 `app/vendor/pdfjs/LICENSE` 及字体、CMaps、ICC、WASM 的附属许可文件 |
 | CPython 3.12 | Windows 包内运行时 | Python Software Foundation License 及随附许可；[源码](https://www.python.org/downloads/source/) |
 | Tcl/Tk 8.6 | Windows 原生启动界面 | Tcl/Tk 许可；[源码及许可](https://www.tcl.tk/software/tcltk/license.html) |
 | OpenSSL 3.x | HTTPS 客户端运行时 | Apache-2.0；原始许可附于 `licenses/`；[官方源码](https://github.com/openssl/openssl) |

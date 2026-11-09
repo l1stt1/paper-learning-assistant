@@ -23,6 +23,7 @@
 /**
  * pdfjsVersion = 5.6.205
  * pdfjsBuild = ada343803
+ * Local modification: backport Mozilla PDF.js PR #21685 (URL filename scan).
  */
 /******/ // The require scope
 /******/ var __webpack_require__ = {};
@@ -1410,10 +1411,21 @@ function getPdfFilenameFromUrl(url, defaultFilename = "document.pdf") {
     }
   }
   if (newURL.hash) {
-    const reFilename = /[^/?#=]+\.pdf\b(?!.*\.pdf\b)/i;
-    const hashFilename = reFilename.exec(newURL.hash);
-    if (hashFilename) {
-      return decode(hashFilename[0]);
+    // Backport of mozilla/pdf.js#21685: scan for the last extension first,
+    // then walk to the preceding separator. Both steps are linear.
+    const { hash } = newURL;
+    let extensionStart = -1;
+    for (const { index } of hash.matchAll(/\.pdf\b/gi)) {
+      extensionStart = index;
+    }
+    if (extensionStart > 0) {
+      let filenameStart = extensionStart;
+      while (filenameStart > 0 && !"/?#=".includes(hash[filenameStart - 1])) {
+        filenameStart--;
+      }
+      if (filenameStart < extensionStart) {
+        return decode(hash.slice(filenameStart, extensionStart + 4));
+      }
     }
   }
   return defaultFilename;

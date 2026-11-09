@@ -56,11 +56,12 @@ python -m venv .venv
 
 ```powershell
 python -m unittest discover -s tests
+node --test tests/test_pdfjs_filename.mjs
 python -m pip install -r requirements-build.txt
 python scripts/build_release.py --output <新的输出目录>
 ```
 
-测试使用合成 PDF 和模拟模型/Zotero，不需要私人论文、账号或付费调用。构建从明确文件清单选择程序与文档，排除个人文库及开发运行目录；构建脚本拒绝覆盖已有产物。
+测试使用合成 PDF 和模拟模型/Zotero，不需要私人论文、账号或付费调用。PDF.js 文件名回归检查需要 Node.js 22.13 或更高版本；运行应用本身不需要 Node.js。构建从明确文件清单选择程序与文档，排除个人文库及开发运行目录；构建脚本拒绝覆盖已有产物。
 
 首版定位为 Windows 预发布版。Windows 本机验证不能替代所有硬件、杀毒软件和企业策略下的兼容测试。macOS/Linux 源码路径已有适配，但当前未承诺桌面安装支持。安装包暂未代码签名，Windows 可能显示未知发布者提示；请核对官方发布页和文件摘要，不要关闭系统安全功能。
 
